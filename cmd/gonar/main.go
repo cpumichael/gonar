@@ -48,7 +48,7 @@ commands:
   unpack <archive.nar> <dst>  extract a NAR archive into dst
   list [-l|-j] <archive.nar>  print the entries in a NAR archive
                                (default: one name per line; -l: long form;
-                               -j: JSON, one object per line)
+                               -j: pretty-printed JSON array document)
 
 flags must come before positional arguments.
 `)
@@ -107,7 +107,7 @@ func runUnpack(args []string) error {
 func runList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	long := fs.Bool("l", false, "long form: permissions, size, and name")
-	jsonOut := fs.Bool("j", false, "JSON output: one object per line")
+	jsonOut := fs.Bool("j", false, "JSON output: a single pretty-printed array document")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func runList(args []string) error {
 	defer f.Close()
 
 	a := gonar.NewArchive(bufio.NewReader(f))
-	enc := json.NewEncoder(os.Stdout)
+	entries := []jsonEntry{}
 
 	for entry, err := range a.Entries() {
 		if err != nil {
@@ -134,14 +134,20 @@ func runList(args []string) error {
 		}
 		switch {
 		case *jsonOut:
-			if err := enc.Encode(entryJSON(entry)); err != nil {
-				return err
-			}
+			entries = append(entries, entryJSON(entry))
 		case *long:
 			fmt.Println(entry)
 		default:
 			fmt.Println(shortName(entry))
 		}
+	}
+
+	if *jsonOut {
+		data, err := json.MarshalIndent(entries, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
 	}
 	return nil
 }
