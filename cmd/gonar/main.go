@@ -3,9 +3,12 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"hash"
+	"io"
 	"os"
 
 	"github.com/cpumichael/gonar"
@@ -44,87 +47,170 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage: gonar <command> [arguments]
 
 commands:
-  pack [-o out.nar] <path>    serialize path into NAR format
-  unpack <archive.nar> <dst>  extract a NAR archive into dst
-  list [-l|-j|--jsonl] <archive.nar>
+  pack [-o out.nar] [--checksum] [--status-file f] <path>
+                               serialize path into NAR format
+  unpack [--status-file f] <archive.nar> <dst>
+                               extract a NAR archive into dst
+  list [-l|-j|--jsonl] [--status-file f] <archive.nar>
                                print the entries in a NAR archive
                                (default: one name per line; -l: long form;
                                -j: pretty-printed JSON array document;
                                --jsonl: streaming JSON, one object per line)
 
+  --checksum      (pack only) print the archive's SHA-256 checksum to stderr
+  --status-file f (all commands) write a JSON {success, errors, ...} object
+                  to f, decoupled from stdout/stderr so it composes with
+                  pipelines like: gonar pack dir | zstd > out.nar.zst
+
 flags must come before positional arguments.
 `)
 }
 
-func runPack(args []string) error {
+type statusResult struct {
+	Command  string   `json:"command"`
+	Success  bool     `json:"success"`
+	Errors   []string `json:"errors"`
+	Checksum string   `json:"checksum,omitempty"`
+}
+
+func addStatusFileFlag(fs *flag.FlagSet) *string {
+	return fs.String("status-file", "", "write a JSON status object (success, errors, ...) to this path")
+}
+
+func writeStatusFile(path string, result statusResult) error {
+	if path == "" {
+		return nil
+	}
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func runPack(args []string) (err error) {
 	fs := flag.NewFlagSet("pack", flag.ExitOnError)
 	out := fs.String("o", "", "output file (default: stdout)")
-	if err := fs.Parse(args); err != nil {
-		return err
+	checksum := fs.Bool("checksum", false, "print the SHA-256 checksum of the archive to stderr")
+	statusFile := addStatusFileFlag(fs)
+	if perr := fs.Parse(args); perr != nil {
+		return perr
 	}
 
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: gonar pack [-o out.nar] <path>")
+		return fmt.Errorf("usage: gonar pack [-o out.nar] [--checksum] [--status-file f] <path>")
 	}
 	path := fs.Arg(0)
 
+	result := statusResult{Command: "pack", Errors: []string{}}
+	defer func() {
+		result.Success = err == nil
+		if err != nil {
+			result.Errors = []string{err.Error()}
+		}
+		if werr := writeStatusFile(*statusFile, result); werr != nil {
+			fmt.Fprintf(os.Stderr, "gonar: failed to write status file: %v\n", werr)
+		}
+	}()
+
 	w := os.Stdout
 	if *out != "" {
-		f, err := os.Create(*out)
-		if err != nil {
-			return err
+		f, ferr := os.Create(*out)
+		if ferr != nil {
+			return ferr
 		}
 		defer f.Close()
 		w = f
 	}
 
 	bw := bufio.NewWriter(w)
-	if err := gonar.Pack(bw, path); err != nil {
+
+	var hasher hash.Hash
+	dst := io.Writer(bw)
+	if *checksum {
+		hasher = sha256.New()
+		dst = io.MultiWriter(bw, hasher)
+	}
+
+	if err = gonar.Pack(dst, path); err != nil {
 		return err
 	}
-	return bw.Flush()
+	if err = bw.Flush(); err != nil {
+		return err
+	}
+
+	if *checksum {
+		result.Checksum = fmt.Sprintf("sha256:%x", hasher.Sum(nil))
+		fmt.Fprintln(os.Stderr, result.Checksum)
+	}
+	return nil
 }
 
-func runUnpack(args []string) error {
+func runUnpack(args []string) (err error) {
 	fs := flag.NewFlagSet("unpack", flag.ExitOnError)
-	if err := fs.Parse(args); err != nil {
-		return err
+	statusFile := addStatusFileFlag(fs)
+	if perr := fs.Parse(args); perr != nil {
+		return perr
 	}
 
 	if fs.NArg() != 2 {
-		return fmt.Errorf("usage: gonar unpack <archive.nar> <dst>")
+		return fmt.Errorf("usage: gonar unpack [--status-file f] <archive.nar> <dst>")
 	}
 	archivePath, dst := fs.Arg(0), fs.Arg(1)
 
-	f, err := os.Open(archivePath)
-	if err != nil {
-		return err
+	result := statusResult{Command: "unpack", Errors: []string{}}
+	defer func() {
+		result.Success = err == nil
+		if err != nil {
+			result.Errors = []string{err.Error()}
+		}
+		if werr := writeStatusFile(*statusFile, result); werr != nil {
+			fmt.Fprintf(os.Stderr, "gonar: failed to write status file: %v\n", werr)
+		}
+	}()
+
+	f, ferr := os.Open(archivePath)
+	if ferr != nil {
+		return ferr
 	}
 	defer f.Close()
 
 	a := gonar.NewArchive(bufio.NewReader(f))
-	return a.Unpack(dst)
+	err = a.Unpack(dst)
+	return err
 }
 
-func runList(args []string) error {
+func runList(args []string) (err error) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	long := fs.Bool("l", false, "long form: permissions, size, and name")
 	jsonOut := fs.Bool("j", false, "JSON output: a single pretty-printed array document")
 	jsonl := fs.Bool("jsonl", false, "JSON output: one compact object per line (streaming)")
-	if err := fs.Parse(args); err != nil {
-		return err
+	statusFile := addStatusFileFlag(fs)
+	if perr := fs.Parse(args); perr != nil {
+		return perr
 	}
 
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: gonar list [-l|-j|--jsonl] <archive.nar>")
+		return fmt.Errorf("usage: gonar list [-l|-j|--jsonl] [--status-file f] <archive.nar>")
 	}
 	if countTrue(*long, *jsonOut, *jsonl) > 1 {
 		return fmt.Errorf("gonar list: -l, -j, and --jsonl are mutually exclusive")
 	}
 
-	f, err := os.Open(fs.Arg(0))
-	if err != nil {
-		return err
+	result := statusResult{Command: "list", Errors: []string{}}
+	defer func() {
+		result.Success = err == nil
+		if err != nil {
+			result.Errors = []string{err.Error()}
+		}
+		if werr := writeStatusFile(*statusFile, result); werr != nil {
+			fmt.Fprintf(os.Stderr, "gonar: failed to write status file: %v\n", werr)
+		}
+	}()
+
+	f, ferr := os.Open(fs.Arg(0))
+	if ferr != nil {
+		return ferr
 	}
 	defer f.Close()
 
@@ -132,15 +218,15 @@ func runList(args []string) error {
 	entries := []jsonEntry{}
 	enc := json.NewEncoder(os.Stdout)
 
-	for entry, err := range a.Entries() {
-		if err != nil {
-			return err
+	for entry, entryErr := range a.Entries() {
+		if entryErr != nil {
+			return entryErr
 		}
 		switch {
 		case *jsonOut:
 			entries = append(entries, entryJSON(entry))
 		case *jsonl:
-			if err := enc.Encode(entryJSON(entry)); err != nil {
+			if err = enc.Encode(entryJSON(entry)); err != nil {
 				return err
 			}
 		case *long:
@@ -151,9 +237,9 @@ func runList(args []string) error {
 	}
 
 	if *jsonOut {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return err
+		data, merr := json.MarshalIndent(entries, "", "  ")
+		if merr != nil {
+			return merr
 		}
 		fmt.Println(string(data))
 	}
