@@ -81,7 +81,7 @@ func (e *Entry) String() string {
 
 	switch e.kind {
 	case kindDirectory:
-		return fmt.Sprintf("drwxr-xr-x %8s  %s", "-", name)
+		return fmt.Sprintf("drwxr-xr-x %8d  %s", 0, name)
 	case kindSymlink:
 		return fmt.Sprintf("lrwxrwxrwx %8s  %s -> %s", "-", name, e.target)
 	default:
