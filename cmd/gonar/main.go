@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -45,8 +46,9 @@ func usage() {
 commands:
   pack [-o out.nar] <path>    serialize path into NAR format
   unpack <archive.nar> <dst>  extract a NAR archive into dst
-  list [-l] <archive.nar>     print the entries in a NAR archive
-                               (default: one name per line; -l: long form)
+  list [-l|-j] <archive.nar>  print the entries in a NAR archive
+                               (default: one name per line; -l: long form;
+                               -j: JSON, one object per line)
 
 flags must come before positional arguments.
 `)
@@ -105,12 +107,16 @@ func runUnpack(args []string) error {
 func runList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	long := fs.Bool("l", false, "long form: permissions, size, and name")
+	jsonOut := fs.Bool("j", false, "JSON output: one object per line")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: gonar list [-l] <archive.nar>")
+		return fmt.Errorf("usage: gonar list [-l|-j] <archive.nar>")
+	}
+	if *long && *jsonOut {
+		return fmt.Errorf("gonar list: -l and -j are mutually exclusive")
 	}
 
 	f, err := os.Open(fs.Arg(0))
@@ -120,13 +126,20 @@ func runList(args []string) error {
 	defer f.Close()
 
 	a := gonar.NewArchive(bufio.NewReader(f))
+	enc := json.NewEncoder(os.Stdout)
+
 	for entry, err := range a.Entries() {
 		if err != nil {
 			return err
 		}
-		if *long {
+		switch {
+		case *jsonOut:
+			if err := enc.Encode(entryJSON(entry)); err != nil {
+				return err
+			}
+		case *long:
 			fmt.Println(entry)
-		} else {
+		default:
 			fmt.Println(shortName(entry))
 		}
 	}
@@ -142,4 +155,28 @@ func shortName(entry *gonar.Entry) string {
 		return name + " -> " + entry.Target()
 	}
 	return name
+}
+
+type jsonEntry struct {
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	Executable bool   `json:"executable,omitempty"`
+	Size       int64  `json:"size,omitempty"`
+	Target     string `json:"target,omitempty"`
+}
+
+func entryJSON(entry *gonar.Entry) jsonEntry {
+	je := jsonEntry{Name: entry.Name()}
+	switch {
+	case entry.IsDir():
+		je.Kind = "directory"
+	case entry.IsSymlink():
+		je.Kind = "symlink"
+		je.Target = entry.Target()
+	default:
+		je.Kind = "regular"
+		je.Executable = entry.IsExecutable()
+		je.Size = entry.Size()
+	}
+	return je
 }
