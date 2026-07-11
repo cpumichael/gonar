@@ -60,18 +60,36 @@ func (e *Entry) IsFile() bool { return e.kind == kindRegular && !e.executable }
 
 func (e *Entry) IsSymlink() bool { return e.kind == kindSymlink }
 
+// Size returns the length of a regular file's contents in bytes. It is 0 for
+// directories and symlinks.
+func (e *Entry) Size() int64 { return int64(len(e.data)) }
+
+// Target returns the symlink target. It is "" for non-symlink entries.
+func (e *Entry) Target() string { return e.target }
+
 func (e *Entry) SetCanonicalizeMtime(canonicalize bool) { e.canonicalizeMtime = canonicalize }
 
 func (e *Entry) SetRemoveXattrs(remove bool) { e.removeXattrs = remove }
 
+// String formats the entry as a single ls-l-style line: permissions, size,
+// and name (with "-> target" appended for symlinks).
 func (e *Entry) String() string {
+	name := e.name
+	if name == "" {
+		name = "."
+	}
+
 	switch e.kind {
 	case kindDirectory:
-		return fmt.Sprintf("Entry{name: %q, kind: Directory}", e.name)
+		return fmt.Sprintf("drwxr-xr-x %8s  %s", "-", name)
 	case kindSymlink:
-		return fmt.Sprintf("Entry{name: %q, kind: Symlink{target: %q}}", e.name, e.target)
+		return fmt.Sprintf("lrwxrwxrwx %8s  %s -> %s", "-", name, e.target)
 	default:
-		return fmt.Sprintf("Entry{name: %q, kind: Regular{executable: %t}}", e.name, e.executable)
+		perm := "-r--r--r--"
+		if e.executable {
+			perm = "-r-xr-xr-x"
+		}
+		return fmt.Sprintf("%s %8d  %s", perm, len(e.data), name)
 	}
 }
 
