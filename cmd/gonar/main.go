@@ -45,7 +45,8 @@ func usage() {
 commands:
   pack <path> [-o out.nar]    serialize path into NAR format
   unpack <archive.nar> <dst>  extract a NAR archive into dst
-  list <archive.nar>          print the entries in a NAR archive
+  list <archive.nar> [-s]     print the entries in a NAR archive
+                               (-s: short form, one name per line)
 `)
 }
 
@@ -101,12 +102,13 @@ func runUnpack(args []string) error {
 
 func runList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
+	short := fs.Bool("s", false, "short form: one name per line")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: gonar list <archive.nar>")
+		return fmt.Errorf("usage: gonar list <archive.nar> [-s]")
 	}
 
 	f, err := os.Open(fs.Arg(0))
@@ -120,7 +122,22 @@ func runList(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(entry)
+		if *short {
+			fmt.Println(shortName(entry))
+		} else {
+			fmt.Println(entry)
+		}
 	}
 	return nil
+}
+
+func shortName(entry *gonar.Entry) string {
+	name := entry.Name()
+	if name == "" {
+		name = "."
+	}
+	if entry.IsSymlink() {
+		return name + " -> " + entry.Target()
+	}
+	return name
 }
