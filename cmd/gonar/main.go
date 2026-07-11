@@ -43,10 +43,12 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage: gonar <command> [arguments]
 
 commands:
-  pack <path> [-o out.nar]    serialize path into NAR format
+  pack [-o out.nar] <path>    serialize path into NAR format
   unpack <archive.nar> <dst>  extract a NAR archive into dst
-  list <archive.nar> [-l]     print the entries in a NAR archive
+  list [-l] <archive.nar>     print the entries in a NAR archive
                                (default: one name per line; -l: long form)
+
+flags must come before positional arguments.
 `)
 }
 
@@ -58,7 +60,7 @@ func runPack(args []string) error {
 	}
 
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: gonar pack <path> [-o out.nar]")
+		return fmt.Errorf("usage: gonar pack [-o out.nar] <path>")
 	}
 	path := fs.Arg(0)
 
@@ -108,7 +110,7 @@ func runList(args []string) error {
 	}
 
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: gonar list <archive.nar> [-l]")
+		return fmt.Errorf("usage: gonar list [-l] <archive.nar>")
 	}
 
 	f, err := os.Open(fs.Arg(0))
