@@ -46,9 +46,11 @@ func usage() {
 commands:
   pack [-o out.nar] <path>    serialize path into NAR format
   unpack <archive.nar> <dst>  extract a NAR archive into dst
-  list [-l|-j] <archive.nar>  print the entries in a NAR archive
+  list [-l|-j|--jsonl] <archive.nar>
+                               print the entries in a NAR archive
                                (default: one name per line; -l: long form;
-                               -j: pretty-printed JSON array document)
+                               -j: pretty-printed JSON array document;
+                               --jsonl: streaming JSON, one object per line)
 
 flags must come before positional arguments.
 `)
@@ -108,15 +110,16 @@ func runList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	long := fs.Bool("l", false, "long form: permissions, size, and name")
 	jsonOut := fs.Bool("j", false, "JSON output: a single pretty-printed array document")
+	jsonl := fs.Bool("jsonl", false, "JSON output: one compact object per line (streaming)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: gonar list [-l|-j] <archive.nar>")
+		return fmt.Errorf("usage: gonar list [-l|-j|--jsonl] <archive.nar>")
 	}
-	if *long && *jsonOut {
-		return fmt.Errorf("gonar list: -l and -j are mutually exclusive")
+	if countTrue(*long, *jsonOut, *jsonl) > 1 {
+		return fmt.Errorf("gonar list: -l, -j, and --jsonl are mutually exclusive")
 	}
 
 	f, err := os.Open(fs.Arg(0))
@@ -127,6 +130,7 @@ func runList(args []string) error {
 
 	a := gonar.NewArchive(bufio.NewReader(f))
 	entries := []jsonEntry{}
+	enc := json.NewEncoder(os.Stdout)
 
 	for entry, err := range a.Entries() {
 		if err != nil {
@@ -135,6 +139,10 @@ func runList(args []string) error {
 		switch {
 		case *jsonOut:
 			entries = append(entries, entryJSON(entry))
+		case *jsonl:
+			if err := enc.Encode(entryJSON(entry)); err != nil {
+				return err
+			}
 		case *long:
 			fmt.Println(entry)
 		default:
@@ -150,6 +158,16 @@ func runList(args []string) error {
 		fmt.Println(string(data))
 	}
 	return nil
+}
+
+func countTrue(bs ...bool) int {
+	n := 0
+	for _, b := range bs {
+		if b {
+			n++
+		}
+	}
+	return n
 }
 
 func shortName(entry *gonar.Entry) string {
