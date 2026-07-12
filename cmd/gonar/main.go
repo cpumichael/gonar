@@ -141,7 +141,7 @@ func runPack(args []string) (err error) {
 
 	if *checksum {
 		result.Checksum = fmt.Sprintf("sha256:%x", hasher.Sum(nil))
-		fmt.Fprintln(os.Stderr, result.Checksum)
+		fmt.Fprintln(os.Stdout, result.Checksum)
 	}
 	return nil
 }
