@@ -1,8 +1,12 @@
 # gonar
 
-A Go implementation of the NAR (Nix Archive) format — a Go port of
-[libnar](https://github.com/ebkalderon/libnar). Wire-compatible with the
-Rust implementation: archives produced by one can be read by the other.
+A Go implementation of the NAR (Nix Archive) format — a Go port inspired by
+the Rust [`libnar`](https://github.com/ebkalderon/libnar) implementation.
+
+`gonar` reads and writes the stable Nix Archive (`nix-archive-1`) format
+used by Nix and Guix. It is cross-tested against real Nix and Guix archive
+data, producing byte-identical, reproducible NAR output for conforming
+archives.
 
 ## Library
 
