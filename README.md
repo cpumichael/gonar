@@ -80,9 +80,6 @@ gonar list --jsonl archive.nar   # streaming: one compact JSON object per line
 # Unpack an archive.
 gonar unpack archive.nar ./dest
 
-# Get a checksum of the packed bytes (SHA-256, matching Nix's own NAR hash).
-gonar pack --checksum -o archive.nar ./some-dir
-
 # Write a machine-readable {command, success, errors, checksum} result to a
 # file, independent of stdout/stderr -- useful when stdout is piped elsewhere.
 gonar pack --checksum --status-file=status.json ./some-dir | zstd > archive.nar.zst
