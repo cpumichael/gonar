@@ -46,7 +46,7 @@ go install github.com/cpumichael/gonar/cmd/gonar@latest
 usage: gonar <command> [arguments]
 
 commands:
-  pack [-o out.nar] [--checksum] [--status-file f] <path>
+  pack [-o out.nar] [--checksum] [--force-stdout] [--status-file f] <path>
                                serialize path into NAR format
   unpack [--status-file f] <archive.nar> <dst>
                                extract a NAR archive into dst
@@ -56,7 +56,10 @@ commands:
                                -j: pretty-printed JSON array document;
                                --jsonl: streaming JSON, one object per line)
 
-  --checksum      (pack only) print the archive's SHA-256 checksum to stderr
+  --checksum      (pack only) include archive's SHA-256 checksum in the json
+                  status file
+  --force-stdout  (pack only) write the archive to stdout even if stdout is
+                  a terminal
   --status-file f (all commands) write a JSON {success, errors, ...} object
                   to f, decoupled from stdout/stderr so it composes with
                   pipelines like: gonar pack dir | zstd > out.nar.zst
