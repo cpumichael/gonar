@@ -1,4 +1,9 @@
 /gonar
-/gonar.nar
 /bin
+*.json
 *.test
+*.nar
+*.nar.zst
+*.out
+/vendor/
+.DS_Store
