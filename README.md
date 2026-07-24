@@ -48,8 +48,8 @@ usage: gonar <command> [arguments]
 commands:
   pack [-o out.nar] [--checksum] [--force-stdout] [--status-file f] <path>
                                serialize path into NAR format
-  unpack [--status-file f] <archive.nar> <dst>
-                               extract a NAR archive into dst
+  unpack [--status-file f] <archive.nar|-> <dst>
+                                extract a NAR archive into dst
   list [-l|-j|--jsonl] [--status-file f] <archive.nar>
                                print the entries in a NAR archive
                                (default: one name per line; -l: long form;
@@ -80,8 +80,9 @@ gonar list -l archive.nar
 gonar list -j archive.nar        # pretty-printed JSON array document
 gonar list --jsonl archive.nar   # streaming: one compact JSON object per line
 
-# Unpack an archive.
+# Unpack an archive from a file or stdin.
 gonar unpack archive.nar ./dest
+gonar unpack - ./dest < archive.nar
 
 # Write a machine-readable {command, success, errors, checksum} result to a
 # file, independent of stdout/stderr -- useful when stdout is piped elsewhere.

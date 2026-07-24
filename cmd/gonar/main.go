@@ -15,6 +15,10 @@ import (
 	"golang.org/x/term"
 )
 
+var stdinIsTerminal = func() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -50,7 +54,7 @@ func usage() {
 commands:
   pack [-o out.nar] [--checksum] [--force-stdout] [--status-file f] <path>
                                serialize path into NAR format
-  unpack [--status-file f] <archive.nar> <dst>
+  unpack [--status-file f] <archive.nar|-> <dst>
                                extract a NAR archive into dst
   list [-l|-j|--jsonl] [--status-file f] <archive.nar>
                                print the entries in a NAR archive
@@ -160,7 +164,7 @@ func runUnpack(args []string) (err error) {
 	}
 
 	if fs.NArg() != 2 {
-		return fmt.Errorf("usage: gonar unpack [--status-file f] <archive.nar> <dst>")
+		return fmt.Errorf("usage: gonar unpack [--status-file f] <archive.nar|-> <dst>")
 	}
 	archivePath, dst := fs.Arg(0), fs.Arg(1)
 
@@ -175,13 +179,22 @@ func runUnpack(args []string) (err error) {
 		}
 	}()
 
-	f, ferr := os.Open(archivePath)
-	if ferr != nil {
-		return ferr
+	var r io.Reader
+	if archivePath == "-" {
+		if stdinIsTerminal() {
+			return fmt.Errorf("gonar unpack: refusing to read archive from terminal; pipe input or use a file")
+		}
+		r = os.Stdin
+	} else {
+		f, ferr := os.Open(archivePath)
+		if ferr != nil {
+			return ferr
+		}
+		defer f.Close()
+		r = f
 	}
-	defer f.Close()
 
-	a := gonar.NewArchive(bufio.NewReader(f))
+	a := gonar.NewArchive(bufio.NewReader(r))
 	err = a.Unpack(dst)
 	return err
 }
